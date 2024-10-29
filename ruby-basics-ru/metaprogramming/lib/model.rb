@@ -4,63 +4,56 @@
 require 'date'
 
 module Model
-  def self.included(base)
-    base.extend(ClassMethods)
+  def initialize(attrs = {})
+    @attributes = {}
+    self.class.attribute_options.each do |name, options|
+      value = attrs.key?(name) ? attrs[name] : options.fetch(:default, nil)
+      write_attribute(name, value)
+    end
+  end
+
+  def write_attribute(name, value)
+    options = self.class.attribute_options[name]
+    @attributes[name] = self.class.convert(value, options[:type])
   end
 
   module ClassMethods
+    def attribute_options
+      @attribute_options || {}
+    end
+
     def attribute(name, options = {})
-      @attributes ||= {}
-      @attributes[name] = options
+      @attribute_options ||= {}
+      attribute_options[name] = options
 
-      # Создаем геттер
-      define_method(name) do
-        if instance_variable_defined?("@#{name}")
-          instance_variable_get("@#{name}")
-        else
-          default = options[:default]
-          default.is_a?(Proc) ? default.call : default
-        end
+      define_method :"#{name}" do
+        @attributes[name]
       end
 
-      # Создаем сеттер
-      define_method("#{name}=") do |value|
-        instance_variable_set("@#{name}", value)
+      define_method :"#{name}=" do |value|
+        write_attribute(name, value)
       end
     end
 
-    def attributes
-      @attributes || {}
+    def convert(value, target_type)
+      return value if value.nil?
+
+      case target_type
+      when :datetime
+        DateTime.parse value
+      when :integer
+        Integer value
+      when :string
+        String value
+      when :boolean
+        !!value
+      end
     end
   end
 
-  def initialize(attrs = {})
-    self.class.attributes.each do |name, options|
-      # Устанавливаем значение из хеша или дефолтное значение, если оно указано
-      value = attrs.key?(name) ? attrs[name] : options[:default]
-      send("#{name}=", convert_type(value, options[:type])) unless value.nil?
-    end
-  end
-
-  def attributes
-    self.class.attributes.each_with_object({}) do |(name, options), hash|
-      hash[name] = send(name)
-    end
-  end
-
-  private
-
-  def convert_type(value, type)
-    return nil if value.nil? || type.nil?
-
-    case type.to_s
-    when 'String' then value.to_s
-    when 'Integer' then value.to_i
-    when 'Float' then value.to_f
-    when 'Boolean' then !!value
-    when 'DateTime' then DateTime.parse(value) rescue nil
-    else value
-    end
+  def self.included(base)
+    base.attr_reader :attributes
+    base.extend ClassMethods
   end
 end
 # END
