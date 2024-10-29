@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 # BEGIN
+require 'date'
+
 module Model
   def self.included(base)
     base.extend(ClassMethods)
@@ -13,26 +15,11 @@ module Model
 
       # Создаем геттер
       define_method(name) do
-        value = instance_variable_get("@#{name}")
-
-        # Если значение не задано, используем дефолтное значение из опций
-        if value.nil? && options.key?(:default)
-          options[:default].is_a?(Proc) ? options[:default].call : options[:default]
+        if instance_variable_defined?("@#{name}")
+          instance_variable_get("@#{name}")
         else
-          type = self.class.attributes[name][:type]
-          # Преобразуем тип значения, если тип задан
-          if type && !value.nil?
-            case type.to_s
-            when 'String' then value.to_s
-            when 'Integer' then value.to_i
-            when 'Float' then value.to_f
-            when 'Boolean' then !!value
-            when 'DateTime' then DateTime.parse(value) rescue nil
-            else value
-            end
-          else
-            value
-          end
+          default = options[:default]
+          default.is_a?(Proc) ? default.call : default
         end
       end
 
@@ -48,16 +35,31 @@ module Model
   end
 
   def initialize(attrs = {})
-    self.class.attributes.each do |key, options|
-      # Устанавливаем значение из attrs или дефолтное значение, если оно есть
-      value = attrs.key?(key) ? attrs[key] : (options.key?(:default) ? options[:default] : nil)
-      send("#{key}=", value)
+    self.class.attributes.each do |name, options|
+      # Устанавливаем значение из хеша или дефолтное значение, если оно указано
+      value = attrs.key?(name) ? attrs[name] : options[:default]
+      send("#{name}=", convert_type(value, options[:type])) unless value.nil?
     end
   end
 
   def attributes
-    self.class.attributes.keys.each_with_object({}) do |key, hash|
-      hash[key] = send(key)
+    self.class.attributes.each_with_object({}) do |(name, options), hash|
+      hash[name] = send(name)
+    end
+  end
+
+  private
+
+  def convert_type(value, type)
+    return nil if value.nil? || type.nil?
+
+    case type.to_s
+    when 'String' then value.to_s
+    when 'Integer' then value.to_i
+    when 'Float' then value.to_f
+    when 'Boolean' then !!value
+    when 'DateTime' then DateTime.parse(value) rescue nil
+    else value
     end
   end
 end
